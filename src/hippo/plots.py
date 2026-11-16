@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.patches import Circle
 
 from hippo.design import Design, heart_outline
 from hippo.kinematics import analyze
@@ -18,6 +19,7 @@ INK_2 = "#52514e"
 MUTED = "#a3a29c"
 GRID = "#e4e3df"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
+SLURRY = "#8a6240"
 
 plt.rcParams.update(
     {
@@ -44,17 +46,15 @@ def _rot(points: np.ndarray, angle: float) -> np.ndarray:
     return np.array([[c, -s], [s, c]]) @ points
 
 
-def _tail_geometry(d: Design, phi4: float) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Heart outline and hair segments (each (2, n)) for rocker angle phi4."""
-    t, h = d.params.tail, d.params.hair
+def _tail_geometry(d: Design, phi4: float) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
+    """Heart outline, hair trunks and hair strands (each (2, n)) for rocker
+    angle phi4, projected onto the swing plane."""
+    t = d.params.tail
     rot = phi4 - np.pi / 2
     heart = _rot(heart_outline(t.length, t.width, t.overhang), rot)
-    hair = d.hair_reach - t.length
-    hairs = [
-        _rot(np.array([[0.0, hair * np.sin(f)], [-t.length, -t.length - hair * np.cos(f)]]), rot)
-        for f in np.radians(np.linspace(-h.fan / 2, h.fan / 2, h.count))
-    ]
-    return heart, hairs
+    trunks = [_rot(h.trunk[:, :2].T, rot) for h in d.hairs]
+    strands = [_rot(s[:, :2].T, rot) for h in d.hairs for s in h.strands]
+    return heart, trunks, strands
 
 
 def _extent(d: Design, margin: float = 8.0) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -63,8 +63,8 @@ def _extent(d: Design, margin: float = 8.0) -> tuple[tuple[float, float], tuple[
     s = fb.solve(np.linspace(0, 2 * np.pi, 145))
     pts = [s["a"].T, s["b"].T, fb.o2[:, None], fb.o4[:, None]]
     for phi4 in s["phi4"]:
-        heart, hairs = _tail_geometry(d, phi4)
-        pts += [heart, *hairs]
+        heart, trunks, strands = _tail_geometry(d, phi4)
+        pts += [heart, *trunks, *strands]
     xy = np.concatenate(pts, axis=1)
     lo, hi = xy.min(axis=1) - margin, xy.max(axis=1) + margin
     return (lo[0], hi[0]), (lo[1], hi[1])
@@ -80,15 +80,28 @@ def _draw_linkage(ax, d: Design, theta: float, alpha: float = 1.0, tail: bool = 
         ax.plot(*np.stack([fb.o4, b]).T, color=INK_2, alpha=alpha, solid_capstyle="round")[0],
     ]
     if tail:
-        heart, hairs = _tail_geometry(d, s["phi4"][0])
-        if alpha < 1:
+        heart, trunks, strands = _tail_geometry(d, s["phi4"][0])
+        ghost = alpha < 1
+        if ghost:
             closed = np.concatenate([heart, heart[:, :1]], axis=1)
             lines.append(ax.plot(*closed, color=MUTED, lw=1, alpha=alpha)[0])
         else:
             lines.append(ax.fill(*heart, color=INK_2, alpha=0.15, lw=0)[0])
-        for seg in hairs:
-            lines.append(ax.plot(*seg, color=MUTED, lw=1, alpha=alpha)[0])
+        hair_color = MUTED if ghost else INK_2
+        for seg in trunks:
+            lines.append(ax.plot(*seg, color=hair_color, lw=1.4, alpha=alpha, solid_capstyle="round")[0])
+        for seg in strands:
+            lines.append(ax.plot(*seg, color=hair_color, lw=0.6, alpha=alpha)[0])
     return lines
+
+
+def _draw_chute(ax, d: Design):
+    """Slurry chute outlet, and the stream falling from it into the sweep of
+    the hairs. Drawn behind the tail to keep the linkage readable."""
+    f = d.params.frame
+    y0 = f.chute_outlet_y
+    ax.add_patch(Circle((0, y0), f.chute_outer_diameter / 2, facecolor=SLURRY, alpha=0.35, edgecolor=SLURRY, lw=1.2, zorder=0.5))
+    ax.plot([0, 0], [y0, -d.hair_reach], color=SLURRY, lw=2, ls=(0, (1, 2.5)), zorder=0.5)
 
 
 def _setup_mechanism_axes(ax, d: Design):
@@ -104,6 +117,7 @@ def _setup_mechanism_axes(ax, d: Design):
             label, (r * np.sin(swing.max()), -r * np.cos(swing.max())), xytext=(6, -4),
             textcoords="offset points", color=INK_2, fontsize=9,
         )
+    _draw_chute(ax, d)
     for p, name in ((fb.o2, "O2 crank"), (fb.o4, "O4 rocker")):
         ax.plot(*p, "o", ms=8, color="white", mec=INK, mew=1.5, zorder=5)
         ax.annotate(name, p, xytext=(-8, 8), textcoords="offset points", color=INK_2, fontsize=9, ha="right")

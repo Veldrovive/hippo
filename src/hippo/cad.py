@@ -127,16 +127,6 @@ def rocker_tail(d: Design) -> Part:
     return body - Cylinder(g.bore / 2, 4 * (lay.rocker[1] - lay.gear[0]))
 
 
-def _arc(start, tangent, normal, length: float, curl: float, n: int = 8) -> np.ndarray:
-    """Points along a circular arc of given length that turns by `curl` radians
-    from `tangent` towards `normal`."""
-    s = np.linspace(0, 1, n)[:, None]
-    if abs(curl) < 1e-6:
-        return start + s * length * tangent
-    radius = length / curl
-    return start + radius * np.sin(curl * s) * tangent + radius * (1 - np.cos(curl * s)) * normal
-
-
 def _tube(points: np.ndarray, diameter: float) -> Part:
     path = Spline(*[tuple(p) for p in points])
     start, direction = path @ 0, path % 0
@@ -144,44 +134,14 @@ def _tube(points: np.ndarray, diameter: float) -> Part:
 
 
 def hairs(d: Design) -> Compound:
-    """Rigid split hairs fringing the tail tip and curling towards +Z.
-
-    Each hair is a short trunk that splits into `strands` unequal strands over
-    `split_fraction` of its length, like the whisk-shaped pygmy hippo hairs.
-    """
-    h, t = d.params.hair, d.params.tail
+    """Tubes along the split-hair centrelines from `Design.hairs`."""
+    h = d.params.hair
     lay = Layers.from_design(d)
-    rng = np.random.default_rng(h.seed)
-    embed = 4.0
-    z_mid = (lay.rocker[0] + lay.rocker[1]) / 2
-    tip = np.array([0.0, -t.length, z_mid])
-    up = np.array([0.0, 0.0, 1.0])
-    curl = np.radians(h.curl)
-    trunk_len = h.length * (1 - h.split_fraction)
-    trunk_curl = curl * (1 - h.split_fraction)
-
+    z = np.array([0.0, 0.0, (lay.rocker[0] + lay.rocker[1]) / 2])
     solids = []
-    for a in np.radians(np.linspace(-h.fan / 2, h.fan / 2, h.count)):
-        out = np.array([np.sin(a), -np.cos(a), 0.0])
-        root = tip - embed * out
-        trunk = _arc(root, out, up, embed + trunk_len, trunk_curl * (embed + trunk_len) / trunk_len)
-        solids.append(_tube(trunk, h.trunk_diameter))
-
-        split = trunk[-1]
-        k = trunk_curl * (embed + trunk_len) / trunk_len
-        tangent = np.cos(k) * out + np.sin(k) * up
-        normal = -np.sin(k) * out + np.cos(k) * up
-        lateral = np.cross(tangent, normal)
-        spread = np.radians(h.strand_spread)
-        for j in range(h.strands):
-            psi = 2 * np.pi * j / h.strands + rng.uniform(-0.3, 0.3)
-            radial = np.cos(psi) * normal + np.sin(psi) * lateral
-            t0 = np.cos(spread) * tangent + np.sin(spread) * radial
-            n0 = normal - np.dot(normal, t0) * t0
-            n0 /= np.linalg.norm(n0)
-            length = h.length * h.split_fraction * rng.uniform(0.6, 1.0)
-            pts = _arc(split, t0, n0, length, (curl - trunk_curl) * length / (h.length * h.split_fraction))
-            solids.append(_tube(pts, h.strand_diameter))
+    for hair in d.hairs:
+        solids.append(_tube(hair.trunk + z, h.trunk_diameter))
+        solids.extend(_tube(s + z, h.strand_diameter) for s in hair.strands)
     return Compound(solids)
 
 

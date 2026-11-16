@@ -25,7 +25,7 @@ animation always agree.
 | Module | Role |
 |---|---|
 | `kinematics.py` | Four-bar position solution and synthesis (numpy/scipy) |
-| `design.py` | Parameters + synthesised linkage + per-part poses |
+| `design.py` | Parameters + synthesised linkage, split-hair centrelines, per-part poses |
 | `cad.py` | build123d parts, gears via bd_warehouse, STL/STEP export |
 | `plots.py` | matplotlib figure and GIF for slides |
 | `viewer.py` | OCP CAD Viewer display and animation |

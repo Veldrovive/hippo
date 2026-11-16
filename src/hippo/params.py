@@ -48,9 +48,10 @@ class HairParams:
     fan: float = 50.0
     """Total angle the primary hairs fan out over in the swing plane."""
     length: float = 50.0
-    split_fraction: float = 0.75
-    """Fraction of the hair length that is split into strands."""
+    split_at: float = 0.75
+    """Fraction of the hair length, from the root, at which it splits into strands."""
     strands: int = 6
+    """Strands each hair splits into at `split_at`."""
     strand_spread: float = 14.0
     """Angle each strand deflects from its trunk at the split."""
     curl: float = 60.0
